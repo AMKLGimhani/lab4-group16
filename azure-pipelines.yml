@@ -13,11 +13,6 @@ variables:
   tag: '$(Build.BuildId)'
   webAppName: 'webappgrp16'
 
-# Add a variable group or variables for ACR credentials
-# You'll need to manually add these as pipeline variables in the UI
-# acrUsername: <username>
-# acrPassword: <password>
-
 stages:
 - stage: Build
   displayName: 'Build and push container image'
@@ -44,10 +39,19 @@ stages:
   - job: Deploy
     displayName: 'Deploy job'
     steps:
-    - task: AzureWebAppContainer@1
-      displayName: 'Deploy Container to Azure Web App'
+    - task: FileTransform@1
       inputs:
-        appName: $(webAppName)
-        imageName: $(acrLoginServer)/$(imageRepository):$(tag)
-        # Instead of azureSubscription, use publishProfileVariable
-        publishProfileVariable: 'AZURE_WEBAPP_PUBLISH_PROFILE'
+        folderPath: '$(System.DefaultWorkingDirectory)/**/*.PublishSettings'
+        fileType: 'xml'
+        targetFiles: '**/*.PublishSettings'
+            
+    - task: AzureRmWebAppDeployment@4
+      inputs:
+        ConnectionType: 'PublishProfile'
+        PublishProfilePath: '$(System.DefaultWorkingDirectory)/**/*.PublishSettings'
+        PublishProfilePassword: '$(publishProfilePassword)'
+        appType: 'webAppContainer'
+        WebAppName: '$(webAppName)'
+        DockerNamespace: '$(acrLoginServer)'
+        DockerRepository: '$(imageRepository)'
+        DockerImageTag: '$(tag)'
