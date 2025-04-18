@@ -1,0 +1,77 @@
+name: Label & comment issues
+
+on:
+  issues:
+    types:
+      - opened
+      - reopened
+      - closed
+  pull_request:
+    types:
+      - opened
+
+jobs:
+  label_and_comment_on_issues:
+    if: github.event_name == 'issues' && (github.event.action == 'opened' || github.event.action == 'reopened')
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - name: Attach label to issues
+        uses: actions/github-script@v6
+        with:
+          script: |
+            github.rest.issues.addLabels({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              labels: ["issue", "fix"]
+            })
+
+      - name: Comment on new issue
+        uses: peter-evans/create-or-update-comment@v1
+        with:
+          issue-number: ${{ github.event.issue.number }}
+          body: |
+            Thanks for opening this issue! We'll take a look as soon as possible.
+
+  comment_on_closed_issue:
+    if: github.event_name == 'issues' && github.event.action == 'closed'
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - name: Comment on closed issue
+        uses: peter-evans/create-or-update-comment@v1
+        with:
+          issue-number: ${{ github.event.issue.number }}
+          body: |
+            The issue is now resolved.
+
+  first_pr_greeting:
+    if: github.event_name == 'pull_request' && github.event.action == 'opened'
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    steps:
+      - name: Greet first-time contributor
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const { data: pulls } = await github.rest.pulls.list({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: "all",
+              per_page: 100
+            });
+
+            const firstTime = pulls.filter(pr => pr.user.login === context.payload.sender.login).length === 1;
+
+            if (firstTime) {
+              await github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: "Congratulations on opening your first pull request!"
+              });
+            }
