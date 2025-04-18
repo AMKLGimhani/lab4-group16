@@ -9,8 +9,6 @@ variables:
   imageRepository: 'lab4-group16'
   tag: '$(Build.BuildId)'
   webAppName: 'Webappgrp16'
-  # These are from the publish profile you shared
-  publishUrl: 'webappgrp16-cwdqddeqesapa6eq.scm.northeurope-01.azurewebsites.net:443'
 
 steps:
 # Build and push Docker image
@@ -25,15 +23,41 @@ steps:
     docker push $(acrLoginServer)/$(imageRepository):$(tag)
   displayName: 'Build and push Docker image'
 
-# Deploy using publish profile
-- task: AzureWebAppContainer@1
-  displayName: 'Deploy to Azure Web App'
+# Deploy using WebDeploy (MSDeploy)
+- task: AzureRmWebAppDeployment@4
   inputs:
-    appName: $(webAppName)
-    imageName: $(acrLoginServer)/$(imageRepository):$(tag)
-    publishProfilePassword: $(publishProfilePassword)
-    publishProfileUsername: '$(publishProfileUsername)'
-    containerRegistryUrl: 'https://$(acrLoginServer)'
-    containerRegistryUsername: $(acrUsername)
-    containerRegistryPassword: $(acrPassword)
-    connectionType: 'PublishProfile'
+    ConnectionType: 'PublishProfile'
+    PublishProfilePath: '$(System.DefaultWorkingDirectory)/publishprofile.xml'
+    appType: 'webAppContainer'
+    WebAppName: 'Webappgrp16'
+    DockerNamespace: '$(acrLoginServer)'
+    DockerRepository: '$(imageRepository)'
+    DockerImageTag: '$(tag)'
+    AppSettings: '-DOCKER_REGISTRY_SERVER_URL https://$(acrLoginServer) -DOCKER_REGISTRY_SERVER_USERNAME $(acrUsername) -DOCKER_REGISTRY_SERVER_PASSWORD $(acrPassword)'
+  displayName: 'Deploy to Azure Web App'
+
+# Alternate deployment method using cURL if the above fails
+- script: |
+    # Setup container config
+    CONTAINER_SETTINGS='{
+      "properties": {
+        "linuxFxVersion": "DOCKER|$(acrLoginServer)/$(imageRepository):$(tag)"
+      }
+    }'
+    
+    # Encode credentials for Basic Auth
+    AUTH=$(echo -n "$Webappgrp16:$(publishProfilePassword)" | base64)
+    
+    # Update container settings via Kudu API
+    curl -X PUT \
+      "https://webappgrp16-cwdqddeqesapa6eq.scm.northeurope-01.azurewebsites.net/api/settings" \
+      -H "Authorization: Basic $AUTH" \
+      -H "Content-Type: application/json" \
+      -d "$CONTAINER_SETTINGS"
+      
+    # Restart the app
+    curl -X POST \
+      "https://webappgrp16-cwdqddeqesapa6eq.scm.northeurope-01.azurewebsites.net/api/restart" \
+      -H "Authorization: Basic $AUTH"
+  displayName: 'Alternate deployment method'
+  condition: always() # Run even if previous step fails
