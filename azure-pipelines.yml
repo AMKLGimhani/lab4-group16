@@ -23,30 +23,32 @@ steps:
     docker push $(acrLoginServer)/$(imageRepository):$(tag)
   displayName: 'Build and push Docker image'
 
-# Deploy using WebDeploy (MSDeploy)
-- task: AzureRmWebAppDeployment@4
-  inputs:
-    ConnectionType: 'PublishProfile'
-    PublishProfilePath: '$(System.DefaultWorkingDirectory)/publishprofile.xml'
-    appType: 'webAppContainer'
-    WebAppName: 'Webappgrp16'
-    DockerNamespace: '$(acrLoginServer)'
-    DockerRepository: '$(imageRepository)'
-    DockerImageTag: '$(tag)'
-    AppSettings: '-DOCKER_REGISTRY_SERVER_URL https://$(acrLoginServer) -DOCKER_REGISTRY_SERVER_USERNAME $(acrUsername) -DOCKER_REGISTRY_SERVER_PASSWORD $(acrPassword)'
-  displayName: 'Deploy to Azure Web App'
-
-# Alternate deployment method using cURL if the above fails
+# Deploy using direct API calls to Kudu
 - script: |
     # Setup container config
     CONTAINER_SETTINGS='{
       "properties": {
-        "linuxFxVersion": "DOCKER|$(acrLoginServer)/$(imageRepository):$(tag)"
+        "linuxFxVersion": "DOCKER|$(acrLoginServer)/$(imageRepository):$(tag)",
+        "appCommandLine": "",
+        "appSettings": [
+          {
+            "name": "DOCKER_REGISTRY_SERVER_URL",
+            "value": "https://$(acrLoginServer)"
+          },
+          {
+            "name": "DOCKER_REGISTRY_SERVER_USERNAME",
+            "value": "$(acrUsername)"
+          },
+          {
+            "name": "DOCKER_REGISTRY_SERVER_PASSWORD",
+            "value": "$(acrPassword)"
+          }
+        ]
       }
     }'
     
     # Encode credentials for Basic Auth
-    AUTH=$(echo -n "$Webappgrp16:$(publishProfilePassword)" | base64)
+    AUTH=$(echo -n "$(publishProfileUsername):$(publishProfilePassword)" | base64)
     
     # Update container settings via Kudu API
     curl -X PUT \
@@ -59,5 +61,4 @@ steps:
     curl -X POST \
       "https://webappgrp16-cwdqddeqesapa6eq.scm.northeurope-01.azurewebsites.net/api/restart" \
       -H "Authorization: Basic $AUTH"
-  displayName: 'Alternate deployment method'
-  condition: always() # Run even if previous step fails
+  displayName: 'Deploy to Azure Web App using Kudu API'
