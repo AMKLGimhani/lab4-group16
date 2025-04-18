@@ -1,31 +1,22 @@
 trigger:
 - main  # Trigger pipeline on commits to main branch
 
-resources:
-  repositories:
-    - repository: self
-      trigger: 
-        branches:
-          include:
-          - main
-
 pool:
   vmImage: 'ubuntu-latest'  # Use Ubuntu build agent
 
 variables:
-  # Container registry service connection established during pipeline creation
-  azureSubscription: 'Azure for Students'
-  subscriptionId: 'cffe2fd3-28d1-4a98-af5a-016b906ea148'
-  azureContainerRegistry: 'group16acr.azurecr.io'
+  # Azure details
+  acrName: 'group16acr'
+  acrLoginServer: 'group16acr.azurecr.io'
   imageRepository: 'lab4-group16'
-  containerRegistry: 'group16acr.azurecr.io'
   dockerfilePath: '$(Build.SourcesDirectory)/Dockerfile'
   tag: '$(Build.BuildId)'
-  imagePullSecret: 'group16acr-auth'
-  
-  # Web App for Container
   webAppName: 'webappgrp16'
-  resourceGroupName: 'group16-resources'
+
+# Add a variable group or variables for ACR credentials
+# You'll need to manually add these as pipeline variables in the UI
+# acrUsername: <username>
+# acrPassword: <password>
 
 stages:
 - stage: Build
@@ -34,16 +25,17 @@ stages:
   - job: Build
     displayName: 'Build job'
     steps:
-    - task: Docker@2
-      displayName: 'Build and push container image'
-      inputs:
-        command: buildAndPush
-        repository: $(imageRepository)
-        dockerfile: $(dockerfilePath)
-        containerRegistry: $(containerRegistry)
-        tags: |
-          $(tag)
-          latest
+    - script: |
+        # Login to ACR using credentials stored in pipeline variables
+        echo $(acrPassword) | docker login $(acrLoginServer) -u $(acrUsername) --password-stdin
+        
+        # Build the docker image
+        docker build -t $(acrLoginServer)/$(imageRepository):$(tag) -t $(acrLoginServer)/$(imageRepository):latest -f $(dockerfilePath) .
+        
+        # Push to ACR
+        docker push $(acrLoginServer)/$(imageRepository):$(tag)
+        docker push $(acrLoginServer)/$(imageRepository):latest
+      displayName: 'Build and push to ACR'
 
 - stage: Deploy
   displayName: 'Deploy to Azure Web App'
@@ -53,11 +45,9 @@ stages:
     displayName: 'Deploy job'
     steps:
     - task: AzureWebAppContainer@1
-      displayName: 'Deploy Azure Web App for Container'
+      displayName: 'Deploy Container to Azure Web App'
       inputs:
-        azureSubscription: $(azureSubscription)
         appName: $(webAppName)
-        resourceGroupName: $(resourceGroupName)
-        containers: $(containerRegistry)/$(imageRepository):$(tag)
-        appSettings: |
-          WEBSITES_ENABLE_APP_SERVICE_STORAGE=false
+        imageName: $(acrLoginServer)/$(imageRepository):$(tag)
+        # Instead of azureSubscription, use publishProfileVariable
+        publishProfileVariable: 'AZURE_WEBAPP_PUBLISH_PROFILE'
