@@ -1,14 +1,19 @@
-# Use the official Nginx base image
-FROM nginx:alpine
+FROM node:18-alpine
 
-# Set the working directory to /usr/share/nginx/html
-WORKDIR /usr/share/nginx/html
+# Create app directory
+WORKDIR /usr/src/app
 
-# Copy the HTML files to the container
-COPY ./www /usr/share/nginx/html
+# Install a simple HTTP server
+RUN npm install -g http-server
 
-# Start Nginx web server
-CMD ["nginx", "-g", "daemon off;"]
+# Copy website files
+COPY . .
 
-# to run the image type docker run -d -p 89:80 imagename
-# after running type in your browser: localhost:89, you should see the page
+# Expose port
+EXPOSE 8080
+
+# Set version environment variable
+ENV APP_VERSION=1.0.0
+
+# Start HTTP server
+CMD ["http-server", "-p", "8080"]
