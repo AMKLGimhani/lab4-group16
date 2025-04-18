@@ -9,26 +9,41 @@ variables:
   imageRepository: 'lab4-group16'
   tag: '$(Build.BuildId)'
   webAppName: 'Webappgrp16'
+  cacheBust: '$(Build.BuildNumber)'
 
 steps:
-# Build and push Docker image
+# Display current directory contents for debugging
+- script: |
+    echo "Current directory contents:"
+    ls -la
+    if [ -f index.html ]; then
+      echo "Content of index.html:"
+      cat index.html
+    else
+      echo "index.html not found!"
+    fi
+  displayName: 'Debug - Show Files'
+
+# Build and push Docker image with no-cache option
 - script: |
     # Login to ACR
     echo $(acrPassword) | docker login $(acrLoginServer) -u $(acrUsername) --password-stdin
     
-    # Build the docker image
-    docker build -t $(acrLoginServer)/$(imageRepository):$(tag) .
+    # Build the docker image with CACHE_BUST to prevent caching
+    docker build --no-cache --build-arg CACHE_BUST=$(cacheBust) -t $(acrLoginServer)/$(imageRepository):$(tag) -t $(acrLoginServer)/$(imageRepository):latest .
     
-    # Push to ACR
+    # Push to ACR with both tags
     docker push $(acrLoginServer)/$(imageRepository):$(tag)
+    docker push $(acrLoginServer)/$(imageRepository):latest
   displayName: 'Build and push Docker image'
 
-# Deploy using direct API calls to Kudu
+# Deploy using direct API calls to Kudu with timestamp for cache busting
 - script: |
-    # Setup container config
+    # Setup container config with timestamp to force refresh
+    TIMESTAMP=$(date +%s)
     CONTAINER_SETTINGS='{
       "properties": {
-        "linuxFxVersion": "DOCKER|$(acrLoginServer)/$(imageRepository):$(tag)",
+        "linuxFxVersion": "DOCKER|$(acrLoginServer)/$(imageRepository):$(tag)?t=$TIMESTAMP",
         "appCommandLine": "",
         "appSettings": [
           {
@@ -42,6 +57,14 @@ steps:
           {
             "name": "DOCKER_REGISTRY_SERVER_PASSWORD",
             "value": "$(acrPassword)"
+          },
+          {
+            "name": "WEBSITES_CONTAINER_START_TIME_LIMIT",
+            "value": "600"
+          },
+          {
+            "name": "WEBSITES_ENABLE_APP_SERVICE_STORAGE",
+            "value": "false"
           }
         ]
       }
@@ -61,4 +84,16 @@ steps:
     curl -X POST \
       "https://webappgrp16-cwdqddeqesapa6eq.scm.northeurope-01.azurewebsites.net/api/restart" \
       -H "Authorization: Basic $AUTH"
+    
+    echo "Deployment completed with timestamp: $TIMESTAMP"
+    echo "Container image: $(acrLoginServer)/$(imageRepository):$(tag)"
   displayName: 'Deploy to Azure Web App using Kudu API'
+
+# Verify deployment
+- script: |
+    echo "Waiting 30 seconds for deployment to complete..."
+    sleep 30
+    
+    echo "Verifying deployment by checking the website..."
+    curl -s -o /dev/null -w "HTTP Status: %{http_code}\n" https://webappgrp16-cwdqddeqesapa6eq.northeurope-01.azurewebsites.net/
+  displayName: 'Verify Deployment'
