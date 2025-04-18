@@ -5,53 +5,35 @@ pool:
   vmImage: 'ubuntu-latest'  # Use Ubuntu build agent
 
 variables:
-  # Azure details
-  acrName: 'group16acr'
   acrLoginServer: 'group16acr.azurecr.io'
   imageRepository: 'lab4-group16'
-  dockerfilePath: '$(Build.SourcesDirectory)/Dockerfile'
   tag: '$(Build.BuildId)'
-  webAppName: 'webappgrp16'
+  webAppName: 'Webappgrp16'
+  # These are from the publish profile you shared
+  publishUrl: 'webappgrp16-cwdqddeqesapa6eq.scm.northeurope-01.azurewebsites.net:443'
 
-stages:
-- stage: Build
-  displayName: 'Build and push container image'
-  jobs:  
-  - job: Build
-    displayName: 'Build job'
-    steps:
-    - script: |
-        # Login to ACR using credentials stored in pipeline variables
-        echo $(acrPassword) | docker login $(acrLoginServer) -u $(acrUsername) --password-stdin
-        
-        # Build the docker image
-        docker build -t $(acrLoginServer)/$(imageRepository):$(tag) -t $(acrLoginServer)/$(imageRepository):latest -f $(dockerfilePath) .
-        
-        # Push to ACR
-        docker push $(acrLoginServer)/$(imageRepository):$(tag)
-        docker push $(acrLoginServer)/$(imageRepository):latest
-      displayName: 'Build and push to ACR'
+steps:
+# Build and push Docker image
+- script: |
+    # Login to ACR
+    echo $(acrPassword) | docker login $(acrLoginServer) -u $(acrUsername) --password-stdin
+    
+    # Build the docker image
+    docker build -t $(acrLoginServer)/$(imageRepository):$(tag) .
+    
+    # Push to ACR
+    docker push $(acrLoginServer)/$(imageRepository):$(tag)
+  displayName: 'Build and push Docker image'
 
-- stage: Deploy
+# Deploy using publish profile
+- task: AzureWebAppContainer@1
   displayName: 'Deploy to Azure Web App'
-  dependsOn: Build
-  jobs:
-  - job: Deploy
-    displayName: 'Deploy job'
-    steps:
-    - task: FileTransform@1
-      inputs:
-        folderPath: '$(System.DefaultWorkingDirectory)/**/*.PublishSettings'
-        fileType: 'xml'
-        targetFiles: '**/*.PublishSettings'
-            
-    - task: AzureRmWebAppDeployment@4
-      inputs:
-        ConnectionType: 'PublishProfile'
-        PublishProfilePath: '$(System.DefaultWorkingDirectory)/**/*.PublishSettings'
-        PublishProfilePassword: '$(publishProfilePassword)'
-        appType: 'webAppContainer'
-        WebAppName: '$(webAppName)'
-        DockerNamespace: '$(acrLoginServer)'
-        DockerRepository: '$(imageRepository)'
-        DockerImageTag: '$(tag)'
+  inputs:
+    appName: $(webAppName)
+    imageName: $(acrLoginServer)/$(imageRepository):$(tag)
+    publishProfilePassword: $(publishProfilePassword)
+    publishProfileUsername: '$(publishProfileUsername)'
+    containerRegistryUrl: 'https://$(acrLoginServer)'
+    containerRegistryUsername: $(acrUsername)
+    containerRegistryPassword: $(acrPassword)
+    connectionType: 'PublishProfile'
